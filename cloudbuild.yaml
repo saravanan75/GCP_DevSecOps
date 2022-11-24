@@ -1,0 +1,46 @@
+steps:
+    -  name: gcr.io/cloud-builders/docker
+       args: ["build", "-t", "us-central1-docker.pkg.dev/$PROJECT_ID/webgoat/webgoat:$SHORT_SHA", "."]
+# SAST Testing Starts Here     
+    -  name: 'gcr.io/cloud-builders/docker'
+       args: 
+        - 'build'
+        - '--file=Dockerfile-sonar'    
+        - '--build-arg'
+        - 'SONARQUBE_SCANNER_CLI_VERSION=4.6.0.2311'
+        - '-t'
+        - 'us-central1-docker.pkg.dev/$PROJECT_ID/sonar-scanner:latest'
+        - '-t'
+        - 'us-central1-docker.pkg.dev/$PROJECT_ID/sonar-scanner:4.6.0.2311'
+        - '.'   
+    -  name: 'us-central1-docker.pkg.dev/$PROJECT_ID/sonar-scanner:latest'
+       args:
+        - '-Dsonar.host.url=https://sonarcloud.io'
+        - '-Dsonar.login=dddaa2e8e730aec17ee23142a75aa73ed4b79015'
+        - '-Dsonar.projectKey=acg-devsecops-project'
+        - '-Dsonar.organization=acg-devsecops'
+        - '-Dsonar.java.binaries=target/classes'  
+# End of SAST testing
+    -  name: gcr.io/cloud-builders/docker
+       args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/webgoat/webgoat:$SHORT_SHA']  
+    -  name: gcr.io/cloud-builders/gcloud
+       args: ['run', 'deploy', 'webgoat', '--region=us-central1', '--platform=managed', '--image=us-central1-docker.pkg.dev/$PROJECT_ID/webgoat/webgoat:$SHORT_SHA', '--allow-unauthenticated']       
+    -  name: 'nginx'
+       entrypoint: bash
+       args:
+         -  '-c'
+         -  |-
+            apt-get update
+            apt-get -y install wget
+            apt-get install -y openjdk-11-jdk-headless
+            wget https://github.com/zaproxy/zaproxy/releases/download/v2.11.1/ZAP_2.11.1_Linux.tar.gz
+            mkdir owasp
+            tar -xvf ZAP_2.11.1_Linux.tar.gz         
+            cd ZAP_2.11.1
+            ./zap.sh -cmd -quickurl https://webgoat-hbo4i4fg2q-uc.a.run.app/WebGoat/ -quickprogress -quickout ../owasp_zap_webgoat_report.html
+artifacts:
+    objects:   
+        location: 'gs://cbcr-owasp-zap'
+        paths: 
+            - owasp_zap_webgoat_report.html
+
